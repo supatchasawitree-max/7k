@@ -112,8 +112,66 @@ html_code = """
 </div>
 
 <script>
-// --- วาง JavaScript ของคุณทั้งหมดที่นี่ ---
-// ฟังก์ชัน parseDamage, refreshTable, readTable, import, generate plan, export, copyMD ฯลฯ
+let players = []; // ใช้ตัวแปรนี้แทน localStorage
+
+function parseDamage(val){
+  if(!val) return 0;
+  let s = String(val).trim().toLowerCase().replace(/,/g,'');
+  if(s.endsWith('m')) return Math.round(parseFloat(s)*1000000);
+  if(s.endsWith('k')) return Math.round(parseFloat(s)*1000);
+  return Math.round(parseFloat(s)||0);
+}
+
+function refreshTable(){
+  const body=document.getElementById('playersBody');
+  body.innerHTML='';
+  if(players.length===0){
+    for(let i=0;i<5;i++) players.push({name:`Player${i+1}`,teo:'',kyle:'',yoonhee:'',karma:''});
+  }
+  const max=Number(document.getElementById('maxPlayers').value)||30;
+  players = players.slice(0,max);
+  players.forEach((p,i)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td>${i+1}</td>
+      <td><input class="form-control form-control-sm name" value="${p.name}"></td>
+      <td><input class="form-control form-control-sm teo" value="${p.teo}"></td>
+      <td><input class="form-control form-control-sm kyle" value="${p.kyle}"></td>
+      <td><input class="form-control form-control-sm yoonhee" value="${p.yoonhee}"></td>
+      <td><input class="form-control form-control-sm karma" value="${p.karma}"></td>
+      <td><button class="btn btn-sm btn-danger removeBtn">ลบ</button></td>
+    `;
+    body.appendChild(tr);
+    tr.querySelector('.removeBtn').onclick=()=>{
+      players.splice(i,1);
+      refreshTable();
+    };
+  });
+}
+
+function readTable(){
+  const rows=[...document.querySelectorAll('#playersBody tr')];
+  players = rows.map((tr,i)=>({
+    name: tr.querySelector('.name').value || `Player${i+1}`,
+    teo: tr.querySelector('.teo').value,
+    kyle: tr.querySelector('.kyle').value,
+    yoonhee: tr.querySelector('.yoonhee').value,
+    karma: tr.querySelector('.karma').value
+  }));
+  return players;
+}
+
+document.getElementById('addRow').onclick = ()=>{
+  readTable();
+  players.push({name:`Player${players.length+1}`,teo:'',kyle:'',yoonhee:'',karma:''});
+  refreshTable();
+};
+
+document.getElementById('clearBtn').onclick = ()=>{
+  if(confirm('ล้างทั้งหมด?')) { players=[]; refreshTable(); }
+};
+
+// เริ่มต้น
 refreshTable();
 </script>
 </body>
