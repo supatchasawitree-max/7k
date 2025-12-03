@@ -70,58 +70,15 @@ html_code = """
 
     <div class="mb-3 d-flex gap-2 flex-wrap">
       <button id="addRow" class="btn btn-sm btn-success">+ เพิ่มแถว</button>
-      <input type="file" id="fileInput" accept=".csv,.tsv,.xlsx,.xls" style="display:none">
-      <button id="importFile" class="btn btn-sm btn-warning">นำเข้า CSV/XLSX</button>
-      <button id="pasteBtn" class="btn btn-sm btn-primary">วางจากคลิปบอร์ด</button>
-      <button id="importSheetBtn" class="btn btn-sm btn-info">นำเข้า Google Sheet (URL)</button>
       <button id="clearBtn" class="btn btn-sm btn-outline-danger">ล้างทั้งหมด</button>
     </div>
-
-    <div class="row g-2 mb-3">
-      <div class="col-md-3">
-        <label class="form-label">HP Teo</label>
-        <input id="hp_teo" class="form-control" type="number" value="100000000">
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">HP Kyle</label>
-        <input id="hp_kyle" class="form-control" type="number" value="100000000">
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">HP Yoonhee</label>
-        <input id="hp_yoonhee" class="form-control" type="number" value="100000000">
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">HP Karma</label>
-        <input id="hp_karma" class="form-control" type="number" value="100000000">
-      </div>
-    </div>
-
-    <div class="mb-3 d-flex gap-2">
-      <button id="generateBtn" class="btn btn-lg btn-primary">สร้างแผน (ปรับอัตโนมัติ)</button>
-      <button id="exportCsv" class="btn btn-dark">ส่งออก CSV</button>
-      <button id="exportXlsx" class="btn btn-secondary">ส่งออก XLSX</button>
-      <button id="copyMd" class="btn btn-outline-secondary">คัดลอก Markdown สำหรับ Discord</button>
-    </div>
-
-    <hr>
-
-    <div id="resultArea"></div>
-
-    <div class="mt-3 small-muted text-end">สร้างโดย <span class="accent">ZeRo</span></div>
   </div>
 </div>
 
 <script>
-let players = []; // ใช้ตัวแปรนี้แทน localStorage
+let players = [];
 
-function parseDamage(val){
-  if(!val) return 0;
-  let s = String(val).trim().toLowerCase().replace(/,/g,'');
-  if(s.endsWith('m')) return Math.round(parseFloat(s)*1000000);
-  if(s.endsWith('k')) return Math.round(parseFloat(s)*1000);
-  return Math.round(parseFloat(s)||0);
-}
-
+// ฟังก์ชันรีเฟรชตาราง
 function refreshTable(){
   const body=document.getElementById('playersBody');
   body.innerHTML='';
@@ -130,10 +87,11 @@ function refreshTable(){
   }
   const max=Number(document.getElementById('maxPlayers').value)||30;
   players = players.slice(0,max);
-  players.forEach((p,i)=>{
+
+  players.forEach((p)=>{
     const tr=document.createElement('tr');
     tr.innerHTML=`
-      <td>${i+1}</td>
+      <td></td>
       <td><input class="form-control form-control-sm name" value="${p.name}"></td>
       <td><input class="form-control form-control-sm teo" value="${p.teo}"></td>
       <td><input class="form-control form-control-sm kyle" value="${p.kyle}"></td>
@@ -142,15 +100,25 @@ function refreshTable(){
       <td><button class="btn btn-sm btn-danger removeBtn">ลบ</button></td>
     `;
     body.appendChild(tr);
-    tr.querySelector('.removeBtn').onclick=()=>{
-      players.splice(i,1);
-      refreshTable();
+    
+    // อัปเดตหมายเลขแถว
+    tr.querySelector('td:first-child').textContent = body.children.length;
+
+    // ลบแถวจริง
+    tr.querySelector('.removeBtn').onclick = (e)=>{
+      const row = e.target.closest('tr');
+      const index = Array.from(body.children).indexOf(row);
+      if(index > -1){
+        players.splice(index, 1);
+        refreshTable();
+      }
     };
   });
 }
 
+// อ่านค่าในตาราง
 function readTable(){
-  const rows=[...document.querySelectorAll('#playersBody tr')];
+  const rows = [...document.querySelectorAll('#playersBody tr')];
   players = rows.map((tr,i)=>({
     name: tr.querySelector('.name').value || `Player${i+1}`,
     teo: tr.querySelector('.teo').value,
@@ -161,12 +129,14 @@ function readTable(){
   return players;
 }
 
+// เพิ่มแถว
 document.getElementById('addRow').onclick = ()=>{
   readTable();
   players.push({name:`Player${players.length+1}`,teo:'',kyle:'',yoonhee:'',karma:''});
   refreshTable();
 };
 
+// ล้างทั้งหมด
 document.getElementById('clearBtn').onclick = ()=>{
   if(confirm('ล้างทั้งหมด?')) { players=[]; refreshTable(); }
 };
@@ -178,4 +148,4 @@ refreshTable();
 </html>
 """
 
-components.html(html_code, height=1200, scrolling=True)
+components.html(html_code, height=800, scrolling=True)
