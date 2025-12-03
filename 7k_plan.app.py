@@ -1,9 +1,15 @@
+import streamlit as st
+import streamlit.components.v1 as components
+
+st.set_page_config(page_title="7K Guild Boss Planner", layout="wide")
+
+html_code = """
 <!doctype html>
 <html lang="th">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>ตัววางแผน Guild Boss Seven Knight v3 (แก้ไขการนำเข้า Google Sheet)</title>
+<title>ตัววางแผน Guild Boss Seven Knight</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 <style>
@@ -106,9 +112,12 @@
 </div>
 
 <script>
-// --- โค้ด JS เดิม (ไม่ต้องแก้) ---
-// คุณสามารถเก็บโค้ด JavaScript เดิมทั้งหมดไว้ เพราะส่วนใหญ่เป็นฟังก์ชันคำนวณ
+// --- วาง JavaScript ของคุณทั้งหมดที่นี่ ---
+// ฟังก์ชัน parseDamage, refreshTable, readTable, import, generate plan, export, copyMD ฯลฯ
 refreshTable();
 </script>
 </body>
 </html>
+"""
+
+components.html(html_code, height=1200, scrolling=True)
