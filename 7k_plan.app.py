@@ -1,90 +1,100 @@
 import streamlit as st
 import pandas as pd
+import io
 
-st.set_page_config(page_title="ตัววางแผน Guild Boss Seven Knight")
+st.set_page_config(page_title="Guild Boss Planner", layout="wide")
 
-st.markdown("<h3>ตัววางแผน Guild Boss Seven Knight</h3>", unsafe_allow_html=True)
-
-# --- Inputs ---
-guild_name = st.text_input("ชื่อกิลด์", "")
-max_players = st.number_input("จำนวนผู้เล่น (สูงสุด 30)", min_value=1, max_value=30, value=30)
-default_hp = st.number_input("HP ของบอสเริ่มต้น", value=100_000_000)
-
-st.markdown("### ผู้เล่น (ชื่อ | Teo | Kyle | Yoonhee | Karma)")
-
-# --- Table ---
-if "players" not in st.session_state:
-    # สร้าง table เริ่มต้น 5 คน
+# --- Initialize session state ---
+if 'players' not in st.session_state:
     st.session_state.players = pd.DataFrame({
-        "ชื่อ": [f"Player{i+1}" for i in range(5)],
-        "Teo": [0]*5,
-        "Kyle": [0]*5,
-        "Yoonhee": [0]*5,
-        "Karma": [0]*5
+        'Name': [f'Player{i+1}' for i in range(5)],
+        'Teo': [0]*5,
+        'Kyle': [0]*5,
+        'Yoonhee': [0]*5,
+        'Karma': [0]*5
     })
 
-# เพิ่มผู้เล่น
-if st.button("+ เพิ่มผู้เล่น"):
-    if len(st.session_state.players) < max_players:
-        st.session_state.players.loc[len(st.session_state.players)] = [f"Player{len(st.session_state.players)+1}",0,0,0,0]
+# --- Sidebar / Inputs ---
+st.sidebar.header("ตั้งค่า")
+guild_name = st.sidebar.text_input("ชื่อกิลด์", value="MyGuild")
+max_players = st.sidebar.number_input("จำนวนผู้เล่น (สูงสุด 30)", min_value=1, max_value=30, value=30)
+hp_teo = st.sidebar.number_input("HP Teo", value=100_000_000)
+hp_kyle = st.sidebar.number_input("HP Kyle", value=100_000_000)
+hp_yoonhee = st.sidebar.number_input("HP Yoonhee", value=100_000_000)
+hp_karma = st.sidebar.number_input("HP Karma", value=100_000_000)
 
-# ลบผู้เล่น
-def remove_player(index):
-    st.session_state.players.drop(index, inplace=True)
-    st.session_state.players.reset_index(drop=True, inplace=True)
+# --- Players Table ---
+st.subheader("ข้อมูลผู้เล่น")
+df = st.experimental_data_editor(st.session_state.players, num_rows="dynamic", key="players_editor")
+st.session_state.players = df.head(max_players)  # trim to max_players
 
-for i in range(len(st.session_state.players)):
-    cols = st.columns([3,1,1,1,1,1])
-    cols[0].text_input("ชื่อ", key=f"name_{i}", value=st.session_state.players.at[i,"ชื่อ"])
-    cols[1].number_input("Teo", key=f"teo_{i}", value=st.session_state.players.at[i,"Teo"])
-    cols[2].number_input("Kyle", key=f"kyle_{i}", value=st.session_state.players.at[i,"Kyle"])
-    cols[3].number_input("Yoonhee", key=f"yoonhee_{i}", value=st.session_state.players.at[i,"Yoonhee"])
-    cols[4].number_input("Karma", key=f"karma_{i}", value=st.session_state.players.at[i,"Karma"])
-    if cols[5].button("ลบ", key=f"del_{i}"):
-        remove_player(i)
-        st.experimental_rerun()
-
-# อัพเดตค่าใน DataFrame
-for i in range(len(st.session_state.players)):
-    st.session_state.players.at[i,"ชื่อ"] = st.session_state[f"name_{i}"]
-    st.session_state.players.at[i,"Teo"] = st.session_state[f"teo_{i}"]
-    st.session_state.players.at[i,"Kyle"] = st.session_state[f"kyle_{i}"]
-    st.session_state.players.at[i,"Yoonhee"] = st.session_state[f"yoonhee_{i}"]
-    st.session_state.players.at[i,"Karma"] = st.session_state[f"karma_{i}"]
-
-# --- Boss HP ---
-st.markdown("### HP บอส")
-hp_teo = st.number_input("HP Teo", value=100_000_000)
-hp_kyle = st.number_input("HP Kyle", value=100_000_000)
-hp_yoonhee = st.number_input("HP Yoonhee", value=100_000_000)
-hp_karma = st.number_input("HP Karma", value=100_000_000)
+# --- Helper to parse input like "1.5m" ---
+def parse_damage(val):
+    if isinstance(val, str):
+        s = val.lower().replace(',', '').strip()
+        if s.endswith('m'): return int(float(s[:-1])*1_000_000)
+        if s.endswith('k'): return int(float(s[:-1])*1_000)
+        return int(float(s))
+    return int(val)
 
 # --- Generate Plan ---
-if st.button("สร้างแผน"):
-    players = st.session_state.players.copy()
-    remaining = {"Teo": hp_teo, "Kyle": hp_kyle, "Yoonhee": hp_yoonhee, "Karma": hp_karma}
-    bosses = ["Teo", "Kyle", "Yoonhee", "Karma"]
+def generate_plan(players_df, hp_dict):
+    bosses = ['Teo', 'Kyle', 'Yoonhee', 'Karma']
     result = []
+    remaining = hp_dict.copy()
     day = 0
+    players = []
+    for _, row in players_df.iterrows():
+        players.append({
+            'Name': row['Name'],
+            'Teo': parse_damage(row['Teo']),
+            'Kyle': parse_damage(row['Kyle']),
+            'Yoonhee': parse_damage(row['Yoonhee']),
+            'Karma': parse_damage(row['Karma'])
+        })
 
     while any(v>0 for v in remaining.values()) and day < 500:
         day += 1
         assigns = []
-        for idx, p in players.iterrows():
-            target_boss = min(bosses, key=lambda b: remaining[b])  # Assign to boss with lowest remaining
-            dmg = min(p[target_boss], remaining[target_boss])
-            assigns.append({"player": p["ชื่อ"], "boss": target_boss, "damage": dmg})
-            remaining[target_boss] -= dmg
-        snapshot = remaining.copy()
-        result.append({"day": day, "assigns": assigns, "snapshot": snapshot})
+        for p in players:
+            alive_bosses = [b for b in bosses if remaining[b] > 0]
+            if alive_bosses:
+                # โจมตีบอสที่สามารถทำ damage มากที่สุด
+                target = max(alive_bosses, key=lambda b: p[b])
+                dmg = min(p[target], remaining[target])
+                assigns.append({'Player': p['Name'], 'Boss': target, 'Damage': dmg})
+                remaining[target] -= dmg
+        result.append({'Day': day, 'Assignments': assigns, 'Remaining': remaining.copy()})
+    return result
 
-    # แสดงผล
-    for r in result:
-        st.markdown(f"**Day {r['day']}**")
-        st.text(f"HP Left — Teo: {r['snapshot']['Teo']:,} / Kyle: {r['snapshot']['Kyle']:,} / Yoonhee: {r['snapshot']['Yoonhee']:,} / Karma: {r['snapshot']['Karma']:,}")
-        for a in r["assigns"]:
-            st.text(f"{a['player']} → {a['boss']}: {a['damage']:,}")
+# --- Generate Button ---
+if st.button("สร้างแผน (ปรับอัตโนมัติ)"):
+    hp_dict = {'Teo': hp_teo, 'Kyle': hp_kyle, 'Yoonhee': hp_yoonhee, 'Karma': hp_karma}
+    plan = generate_plan(st.session_state.players, hp_dict)
+    st.session_state.last_plan = plan
 
-# --- Export ---
-st.download_button("ส่งออก CSV", data=st.session_state.players.to_csv(index=False), file_name=f"{guild_name}.csv")
-st.download_button("ส่งออก XLSX", data=st.session_state.players.to_excel(index=False, engine='openpyxl'), file_name=f"{guild_name}.xlsx")
+# --- Display Plan ---
+if 'last_plan' in st.session_state:
+    st.subheader("ผลลัพธ์แผน")
+    for day_info in st.session_state.last_plan:
+        st.markdown(f"**Day {day_info['Day']}**")
+        rem = day_info['Remaining']
+        st.markdown(f"HP Left — Teo: {rem['Teo']:,} / Kyle: {rem['Kyle']:,} / Yoonhee: {rem['Yoonhee']:,} / Karma: {rem['Karma']:,}")
+        for a in day_info['Assignments']:
+            st.markdown(f"- {a['Player']} → {a['Boss']} : {a['Damage']:,}")
+
+# --- Export CSV/XLSX ---
+col1, col2 = st.columns(2)
+with col1:
+    csv_data = st.session_state.players.to_csv(index=False).encode('utf-8')
+    st.download_button("ส่งออก CSV", data=csv_data, file_name=f"{guild_name}.csv", mime="text/csv")
+with col2:
+    output = io.BytesIO()
+    st.session_state.players.to_excel(output, index=False, engine='openpyxl')
+    output.seek(0)
+    st.download_button(
+        "ส่งออก XLSX",
+        data=output,
+        file_name=f"{guild_name}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
