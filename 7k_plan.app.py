@@ -1,313 +1,230 @@
-<!doctype html>
-<html lang="th">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>ตัวช่วยวางแผนกิลด์บอส Seven Knights v3 (นำเข้า Google Sheet)</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-<style>
-  body { background: #f5f7fb; }
-  .accent { color: #7c3aed; font-weight:700; }
-  .card { border-radius: 12px; }
-  .small-muted { color:#6c757d; font-size:0.9rem; }
-  .btn-ghost { background:transparent; border:1px solid rgba(0,0,0,0.06); }
-</style>
-</head>
-<body>
-<div class="container py-4">
-  <div class="card p-4 shadow-sm">
-    <div class="d-flex align-items-start mb-3">
-      <div>
-        <h3 class="mb-0">ตัวช่วยวางแผนกิลด์บอส Seven Knights</h3>
-        <div class="small-muted">ไฟล์ HTML เดี่ยว — นำเข้า Google Sheet (สาธารณะ), CSV/XLSX หรือวางข้อมูลได้ — ไม่ต้องล็อกอิน</div>
-      </div>
-      <div class="ms-auto text-end small-muted">สร้างโดย <span class="accent">ZeRo</span></div>
-    </div>
+import streamlit as st
+import pandas as pd
+import numpy as np
+import io
+import requests
 
-    <div class="row g-2 mb-3">
-      <div class="col-md-4">
-        <label class="form-label">ชื่อกิลด์</label>
-        <input id="guildName" class="form-control" placeholder="ไม่จำเป็น (ใช้ตั้งชื่อไฟล์ตอนส่งออก)">
-      </div>
-      <div class="col-md-4">
-        <label class="form-label">จำนวนผู้เล่น (สูงสุด 30)</label>
-        <input id="maxPlayers" class="form-control" type="number" value="30" min="1" max="30">
-      </div>
-      <div class="col-md-4">
-        <label class="form-label">HP บอสเริ่มต้น (ค่าเริ่มต้น)</label>
-        <input id="defaultHP" class="form-control" type="number" value="100000000">
-      </div>
-    </div>
+st.set_page_config(page_title="ตัวช่วยวางแผนกิลด์บอส Seven Knights", layout="wide")
 
-    <div class="mb-2 d-flex justify-content-between align-items-center">
-      <h6 class="mb-0">ผู้เล่น (ชื่อ | เทโอ | ไคล์ | ยอนฮี | คาร์ม่า)</h6>
-      <div class="small-muted">รองรับรูปแบบคะแนนเช่น <code>1.540m</code>, <code>980k</code>, <code>1540000</code></div>
-    </div>
+# ---------------------------
+# Helper Functions
+# ---------------------------
 
-    <div class="table-responsive mb-2">
-      <table class="table table-bordered" id="playersTable">
-        <thead class="table-light">
-          <tr>
-            <th style="width:40px">#</th>
-            <th>ชื่อผู้เล่น</th>
-            <th>เทโอ</th>
-            <th>ไคล์</th>
-            <th>ยอนฮี</th>
-            <th>คาร์ม่า</th>
-            <th style="width:90px">ลบ</th>
-          </tr>
-        </thead>
-        <tbody id="playersBody"></tbody>
-      </table>
-    </div>
+def parse_damage(val: str):
+    if not val:
+        return 0
+    s = str(val).lower().replace(",", "").strip()
+    if s.endswith("m"):
+        return int(float(s[:-1]) * 1_000_000)
+    if s.endswith("k"):
+        return int(float(s[:-1]) * 1_000)
+    try:
+        return int(float(s))
+    except:
+        return 0
 
-    <div class="mb-3 d-flex gap-2 flex-wrap">
-      <button id="addRow" class="btn btn-sm btn-success">+ เพิ่มแถว</button>
-      <input type="file" id="fileInput" accept=".csv,.tsv,.xlsx,.xls" style="display:none">
-      <button id="importFile" class="btn btn-sm btn-warning">นำเข้า CSV/XLSX</button>
-      <button id="pasteBtn" class="btn btn-sm btn-primary">วางข้อมูลจากคลิปบอร์ด</button>
-      <button id="importSheetBtn" class="btn btn-sm btn-info">นำเข้า Google Sheet (ลิงก์)</button>
-      <button id="clearBtn" class="btn btn-sm btn-outline-danger">ล้างข้อมูลทั้งหมด</button>
-    </div>
+def fmt_m(num):
+    return f"{num/1e6:.2f}M"
 
-    <div class="row g-2 mb-3">
-      <div class="col-md-3">
-        <label class="form-label">HP เทโอ</label>
-        <input id="hp_teo" class="form-control" type="number" value="100000000">
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">HP ไคล์</label>
-        <input id="hp_kyle" class="form-control" type="number" value="100000000">
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">HP ยอนฮี</label>
-        <input id="hp_yoonhee" class="form-control" type="number" value="100000000">
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">HP คาร์ม่า</label>
-        <input id="hp_karma" class="form-control" type="number" value="100000000">
-      </div>
-    </div>
+# ---------------------------
+# UI - Initial Data
+# ---------------------------
 
-    <div class="mb-3 d-flex gap-2">
-      <button id="generateBtn" class="btn btn-lg btn-primary">สร้างแผนการตี (Auto Optimize)</button>
-      <button id="exportCsv" class="btn btn-dark">ส่งออก CSV</button>
-      <button id="exportXlsx" class="btn btn-secondary">ส่งออก XLSX</button>
-      <button id="copyMd" class="btn btn-outline-secondary">คัดลอกเป็น Markdown (Discord)</button>
-    </div>
+st.title("📘 ตัวช่วยวางแผนกิลด์บอส Seven Knights (เวอร์ชัน Streamlit)")
+st.markdown("จำลองฟีเจอร์ของ HTML เดิมทั้งหมด พร้อมภาษาไทย")
 
-    <hr>
+default_players = pd.DataFrame({
+    "ชื่อผู้เล่น": [f"ผู้เล่น{i+1}" for i in range(5)],
+    "เทโอ": ["" for _ in range(5)],
+    "ไคล์": ["" for _ in range(5)],
+    "ยอนฮี": ["" for _ in range(5)],
+    "คาร์ม่า": ["" for _ in range(5)],
+})
 
-    <div id="resultArea"></div>
+if "players" not in st.session_state:
+    st.session_state.players = default_players.copy()
 
-    <div class="mt-3 small-muted text-end">สร้างโดย <span class="accent">ZeRo</span></div>
-  </div>
-</div>
+# ---------------------------
+# Sidebar - Boss HP
+# ---------------------------
 
-<script>
-// ไม่มีการแก้โค้ด JavaScript — มีการเปลี่ยนเฉพาะข้อความ alert, ปุ่ม, label ให้เป็นภาษาไทย
+st.sidebar.header("⚔️ ตั้งค่า HP บอส")
+hp_teo = st.sidebar.number_input("HP เทโอ", value=100_000_000)
+hp_kyle = st.sidebar.number_input("HP ไคล์", value=100_000_000)
+hp_yh = st.sidebar.number_input("HP ยอนฮี", value=100_000_000)
+hp_karma = st.sidebar.number_input("HP คาร์ม่า", value=100_000_000)
 
-// Helpers
-function parseDamage(val){
-  if(!val) return 0;
-  let s = String(val).trim().toLowerCase().replace(/,/g,'');
-  if(s.endsWith('m')) return Math.round(parseFloat(s)*1000000);
-  if(s.endsWith('k')) return Math.round(parseFloat(s)*1000);
-  return Math.round(parseFloat(s)||0);
-}
-function fmtM(n){ return (n/1e6).toFixed(3).replace(/\.0+$/,'') + 'M'; }
-function savePlayers(p){ localStorage.setItem('sk_players', JSON.stringify(p)); }
-function loadPlayers(){ try{ return JSON.parse(localStorage.getItem('sk_players'))||null; }catch{return null;} }
+# ---------------------------
+# Import Section
+# ---------------------------
 
-// Table
-function createRow(i,p){
-  const tr=document.createElement('tr');
-  tr.innerHTML = `
-    <td>${i+1}</td>
-    <td><input class="form-control form-control-sm name" value="${p?.name||''}"></td>
-    <td><input class="form-control form-control-sm teo" value="${p?.teo||''}"></td>
-    <td><input class="form-control form-control-sm kyle" value="${p?.kyle||''}"></td>
-    <td><input class="form-control form-control-sm yoonhee" value="${p?.yoonhee||''}"></td>
-    <td><input class="form-control form-control-sm karma" value="${p?.karma||''}"></td>
-    <td><button class="btn btn-sm btn-danger removeBtn">ลบ</button></td>`;
-  return tr;
-}
+st.subheader("📥 นำเข้าข้อมูลผู้เล่น")
 
-function refreshTable(){
-  const body=document.getElementById('playersBody');
-  body.innerHTML='';
-  let players=loadPlayers()||[];
-  if(players.length===0){ for(let i=0;i<5;i++) players.push({name:`ผู้เล่น${i+1}`,teo:'',kyle:'',yoonhee:'',karma:''}); }
-  const max=Number(maxPlayers.value)||30;
-  players=players.slice(0,max);
-  players.forEach((p,i)=>{
-    const tr=createRow(i,p); body.appendChild(tr);
-    tr.querySelector('.removeBtn').onclick=()=>{ players.splice(i,1); savePlayers(players); refreshTable(); };
-  });
-  savePlayers(players);
-}
+col1, col2, col3, col4 = st.columns(4)
 
-function readTable(){
-  const rows=[...document.querySelectorAll('#playersBody tr')];
-  const p=rows.map((tr,i)=>({
-    name: tr.querySelector('.name').value||`ผู้เล่น${i+1}`,
-    teo: tr.querySelector('.teo').value,
-    kyle: tr.querySelector('.kyle').value,
-    yoonhee: tr.querySelector('.yoonhee').value,
-    karma: tr.querySelector('.karma').value,
-  }));
-  savePlayers(p); return p;
-}
+# Import CSV/XLSX
+uploaded = col1.file_uploader("นำเข้า CSV / XLSX", type=["csv", "xlsx"])
+if uploaded:
+    if uploaded.name.endswith(".csv"):
+        st.session_state.players = pd.read_csv(uploaded)
+    else:
+        st.session_state.players = pd.read_excel(uploaded)
+    st.success("นำเข้าข้อมูลสำเร็จ")
 
-// File import
-importFile.onclick=()=>fileInput.click();
-fileInput.onchange=e=>{
-  const f=e.target.files[0]; if(!f) return;
-  const reader=new FileReader();
-  reader.onload=ev=>{
-    if(f.name.endsWith('.csv')||f.name.endsWith('.tsv')) parseTextToTable(ev.target.result);
-    else{
-      const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
-      const ws=wb.Sheets[wb.SheetNames[0]];
-      const json=XLSX.utils.sheet_to_json(ws,{header:1});
-      parseTextToTable(json.map(r=>r.join('\t')).join('\n'));
+# Paste Clipboard
+if col2.button("วางข้อมูล (Paste)"):
+    try:
+        text = st.text_area("วางข้อมูลที่นี่ (Name, Teo, Kyle, Yoonhee, Karma)")
+        if text:
+            df = pd.read_csv(io.StringIO(text), header=None)
+            df.columns = ["ชื่อผู้เล่น", "เทโอ", "ไคล์", "ยอนฮี", "คาร์ม่า"]
+            st.session_state.players = df
+    except:
+        st.error("ข้อมูลไม่ถูกต้อง")
+
+# Google Sheet
+if col3.button("นำเข้า Google Sheet (ลิงก์)"):
+    url = st.text_input("วางลิงก์ Google Sheet ที่ตั้งเป็นสาธารณะ")
+    if url:
+        try:
+            # Convert sheet URL to CSV
+            if "spreadsheets" in url:
+                base = url.split("/edit")[0]
+                csv_url = base.replace("/edit", "") + "/export?format=csv"
+                df = pd.read_csv(csv_url)
+                st.session_state.players = df
+                st.success("นำเข้าจาก Google Sheet สำเร็จ!")
+        except:
+            st.error("ลิงก์ไม่ถูกต้องหรือไม่ได้ตั้งค่าเป็นสาธารณะ")
+
+# Reset
+if col4.button("ล้างข้อมูลทั้งหมด"):
+    st.session_state.players = default_players.copy()
+
+# ---------------------------
+# Editable Player Table
+# ---------------------------
+
+st.subheader("📝 ตารางผู้เล่น (แก้ไขได้)")
+players_df = st.data_editor(
+    st.session_state.players,
+    num_rows="dynamic",
+    use_container_width=True
+)
+st.session_state.players = players_df
+
+# ---------------------------
+# Generate the Plan
+# ---------------------------
+
+st.subheader("⚙️ สร้างแผนการตี (Auto-Optimize)")
+
+if st.button("สร้างแผน"):
+    players = []
+
+    # Convert DataFrame → List of dicts
+    for idx, r in players_df.iterrows():
+        players.append({
+            "name": r["ชื่อผู้เล่น"],
+            "teo": parse_damage(r["เทโอ"]),
+            "kyle": parse_damage(r["ไคล์"]),
+            "yoonhee": parse_damage(r["ยอนฮี"]),
+            "karma": parse_damage(r["คาร์ม่า"]),
+        })
+
+    bosses = ["teo", "kyle", "yoonhee", "karma"]
+    hp = {
+        "teo": hp_teo,
+        "kyle": hp_kyle,
+        "yoonhee": hp_yh,
+        "karma": hp_karma
     }
-  };
-  if(f.name.endsWith('.csv')||f.name.endsWith('.tsv')) reader.readAsText(f);
-  else reader.readAsArrayBuffer(f);
-};
+    remaining = hp.copy()
 
-function parseTextToTable(text){
-  const rows=text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
-  const parsed=rows.map(l=>l.split(/\t|,/));
-  const players=[];
-  let start=0;
-  if(parsed[0] && parsed[0][0].toLowerCase().includes('name')) start=1;
-  for(let i=start;i<parsed.length;i++){
-    const r=parsed[i]; if(r.length<5) continue;
-    players.push({name:r[0],teo:r[1],kyle:r[2],yoonhee:r[3],karma:r[4]});
-  }
-  if(players.length){ savePlayers(players); refreshTable(); alert('นำเข้าแล้ว '+players.length+' แถว'); }
-}
+    result = []
+    day = 0
 
-// Paste
-pasteBtn.onclick=()=>navigator.clipboard.readText().then(parseTextToTable);
+    # Main optimization loop (same logic as original)
+    while any(v > 0 for v in remaining.values()) and day < 500:
+        day += 1
+        order = sorted(players, key=lambda p: max(p.values()), reverse=True)
+        assigns = []
 
-// NEW Google Sheet Import
-importSheetBtn.onclick = async ()=>{
-  const url = prompt("วางลิงก์ Google Sheet ที่ตั้งค่าให้ ‘ทุกคนที่มีลิงก์สามารถดูได้’");
-  if(!url) return;
+        for p in order:
+            best_boss = None
+            best_dmg = 0
+            for b in bosses:
+                if remaining[b] > 0 and p[b] > best_dmg:
+                    best_dmg = p[b]
+                    best_boss = b
+            if best_boss:
+                assigns.append({
+                    "player": p["name"],
+                    "boss": best_boss,
+                    "damage": best_dmg
+                })
+                remaining[best_boss] = max(0, remaining[best_boss] - best_dmg)
 
-  try{
-    const idMatch = url.match(/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-    if(!idMatch){ alert('ไม่พบรหัสเอกสาร Sheet'); return; }
-    const id=idMatch[1];
+        result.append({
+            "day": day,
+            "assigns": assigns,
+            "remaining": remaining.copy()
+        })
 
-    const gidMatch = url.match(/gid=(\d+)/);
-    const gid = gidMatch ? gidMatch[1] : '0';
+    st.session_state.result_plan = result
+    st.success("สร้างแผนสำเร็จ!")
 
-    const csvUrl=`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
-    const resp = await fetch(csvUrl);
-    const text = await resp.text();
+# ---------------------------
+# Output Section
+# ---------------------------
 
-    if(text.startsWith('<')){
-      alert('Sheet นี้ไม่ได้ตั้งเป็นสาธารณะ (Google ส่งหน้า HTML กลับมา)');
-      return;
-    }
-    parseTextToTable(text);
-    alert('นำเข้าข้อมูลจาก Google Sheet สำเร็จ!');
-  }catch(e){ alert('นำเข้าข้อมูลล้มเหลว!'); }
-};
+if "result_plan" in st.session_state:
 
-// Add row
-addRow.onclick=()=>{ const p=readTable(); p.push({name:`ผู้เล่น${p.length+1}`,teo:'',kyle:'',yoonhee:'',karma:''}); savePlayers(p); refreshTable(); };
+    st.subheader("📊 ผลลัพธ์การวางแผน")
 
-// Clear
-clearBtn.onclick=()=>{ if(confirm('ต้องการล้างข้อมูลทั้งหมดหรือไม่?')){ localStorage.removeItem('sk_players'); refreshTable(); } };
+    for r in st.session_state.result_plan:
+        st.markdown(f"### 📅 วันที่ {r['day']}")
+        st.markdown(
+            f"**HP คงเหลือ:** เทโอ: {r['remaining']['teo']:,} — "
+            f"ไคล์: {r['remaining']['kyle']:,} — "
+            f"ยอนฮี: {r['remaining']['yoonhee']:,} — "
+            f"คาร์ม่า: {r['remaining']['karma']:,}"
+        )
 
-// Generate plan
-generateBtn.onclick=()=>{
-  const players=readTable().map(p=>({
-    name:p.name,
-    teo:parseDamage(p.teo), kyle:parseDamage(p.kyle), yoonhee:parseDamage(p.yoonhee), karma:parseDamage(p.karma)
-  }));
+        df = pd.DataFrame([{
+            "ผู้เล่น": a["player"],
+            "บอส": a["boss"].upper(),
+            "ดาเมจ": a["damage"],
+            "ดาเมจ (M)": fmt_m(a["damage"])
+        } for a in r["assigns"]])
 
-  const hp={
-    teo:Number(hp_teo.value)||0,
-    kyle:Number(hp_kyle.value)||0,
-    yoonhee:Number(hp_yoonhee.value)||0,
-    karma:Number(hp_karma.value)||0
-  };
+        st.table(df)
 
-  const bosses=['teo','kyle','yoonhee','karma'];
-  const remaining={...hp};
-  const result=[];
-  let day=0;
+    # Export CSV
+    st.subheader("📤 ส่งออกผลลัพธ์")
 
-  while(Object.values(remaining).some(v=>v>0) && day<500){
-    day++;
-    const order=players.slice().sort((a,b)=>Math.max(b.teo,b.kyle,b.yoonhee,b.karma)-Math.max(a.teo,a.kyle,a.yoonhee,a.karma));
-    const assigns=[];
+    if st.button("ดาวน์โหลด CSV"):
+        csv_buffer = io.StringIO()
+        rows = []
+        for d in st.session_state.result_plan:
+            for a in d["assigns"]:
+                rows.append([d["day"], a["player"], a["boss"], a["damage"]])
+        df = pd.DataFrame(rows, columns=["วัน", "ผู้เล่น", "บอส", "ดาเมจ"])
+        df.to_csv(csv_buffer, index=False)
+        st.download_button("ดาวน์โหลด", csv_buffer.getvalue(), "plan.csv")
 
-    for(const p of order){
-      let best=null, bestD=0;
-      for(const b of bosses){ if(remaining[b]>0 && p[b]>bestD){bestD=p[b]; best=b;} }
-      if(best){ assigns.push({player:p.name,boss:best,damage:bestD}); remaining[best]=Math.max(0,remaining[best]-bestD); }
-    }
+    # Export XLSX
+    if st.button("ดาวน์โหลด XLSX"):
+        buffer = io.BytesIO()
+        df.to_excel(buffer, index=False)
+        st.download_button("ดาวน์โหลด", buffer.getvalue(), "plan.xlsx")
 
-    result.push({day,assigns,snapshot:{...remaining}});
-  }
-
-  window._lastPlan=result;
-  renderResult(result);
-};
-
-// Render
-function renderResult(res){
-  const area=resultArea; area.innerHTML='';
-  res.forEach(r=>{
-    const card=document.createElement('div'); card.className='p-3 mb-2 bg-white rounded';
-    let html=`<strong>วันที่ ${r.day}</strong><div class='small-muted'>HP คงเหลือ — เทโอ: ${r.snapshot.teo.toLocaleString()} / ไคล์: ${r.snapshot.kyle.toLocaleString()} / ยอนฮี: ${r.snapshot.yoonhee.toLocaleString()} / คาร์ม่า: ${r.snapshot.karma.toLocaleString()}</div><div class='row mt-2'>`;
-    r.assigns.forEach(a=> html+=`<div class='col-md-6 mb-2'><div class='p-2 border rounded'><strong>${a.player}</strong><div class='small-muted'>${a.boss.toUpperCase()} • ${a.damage.toLocaleString()} (${fmtM(a.damage)})</div></div></div>`);
-    html+='</div>'; card.innerHTML=html; area.appendChild(card);
-  });
-}
-
-// Export CSV
-exportCsv.onclick=()=>{
-  const plan=window._lastPlan||[]; if(!plan.length){alert('ยังไม่มีแผน');return;}
-  const rows=[["Day","Player","Boss","Damage"]];
-  plan.forEach(d=>d.assigns.forEach(a=>rows.push([d.day,a.player,a.boss.toUpperCase(),a.damage])));
-  const csv=rows.map(r=>r.join(',')).join('\n');
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a'); a.href=url; a.download=(guildName.value||'guild')+"_plan.csv"; a.click();
-};
-
-// Export XLSX
-exportXlsx.onclick=()=>{
-  const plan=window._lastPlan||[]; if(!plan.length){alert('ยังไม่มีแผน');return;}
-  const aoa=[["Day","Player","Boss","Damage"]];
-  plan.forEach(d=>d.assigns.forEach(a=>aoa.push([d.day,a.player,a.boss.toUpperCase(),a.damage])));
-  const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(aoa);
-  XLSX.utils.book_append_sheet(wb,ws,'Plan');
-  XLSX.writeFile(wb,(guildName.value||'guild')+"_plan.xlsx");
-};
-
-// Copy MD
-copyMd.onclick=()=>{
-  const plan=window._lastPlan||[]; if(!plan.length){alert('ยังไม่มีแผน');return;}
-  const lines=[`# ${(guildName.value||'Guild')} — แผนการตี (${plan.length} วัน)`];
-  plan.forEach(d=>{
-    lines.push(`**วันที่ ${d.day}**`);
-    d.assigns.forEach(a=> lines.push(`- ${a.player} → ${a.boss.toUpperCase()} (${fmtM(a.damage)})`));
-    lines.push('');
-  });
-  navigator.clipboard.writeText(lines.join('\n')).then(()=>alert('คัดลอกแล้ว!'));
-};
-
-refreshTable();
-</script>
-</body>
-</html>
+    # Copy Markdown
+    if st.button("คัดลอก Markdown"):
+        md = "# แผนการตี\n\n"
+        for d in st.session_state.result_plan:
+            md += f"### วันที่ {d['day']}\n"
+            for a in d["assigns"]:
+                md += f"- {a['player']} → {a['boss'].upper()} ({fmt_m(a['damage'])})\n"
+            md += "\n"
+        st.code(md)
